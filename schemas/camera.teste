@@ -31,6 +31,75 @@ func NewCamera(id int, url string) *Camera {
 	}
 }
 
+// type CameraConfig struct {
+// 	ID        string
+// 	RTSPURL   string
+// 	KeepAlive bool
+// }
+
+// type CameraStream struct {
+// 	Config     CameraConfig
+// 	Status     StreamStatus
+// 	mu         sync.RWMutex
+// 	cmd        *exec.Cmd
+// 	buffer     *RingBuffer // Precisaremos de uma estrutura de buffer circular eficiente
+// 	stopChan   chan struct{}
+// 	lastError  error
+// }
+
+
+// func (c *Camera) StartCapture() {
+// 	// 1. Configuramos o comando FFmpeg para esta câmera específica
+// 	c.Cmd = exec.Command(
+// 		"ffmpeg", // Certifique-se que o ffmpeg está no seu PATH do Windows
+// 		"-rtsp_transport", "tcp",
+// 		"-i", c.URL,
+// 		"-c", "copy",
+// 		"-f", "mpegts",
+// 		"pipe:1", // Joga o resultado para o Stdout do Go
+// 	)
+
+// 	// 2. Criamos o "cano" (pipe) para ler o que o FFmpeg está cuspindo
+// 	stdout, err := c.Cmd.StdoutPipe()
+// 	if err != nil {
+// 		fmt.Printf("Erro ao criar pipe para câmera %d: %v\n", c.ID, err)
+// 		return
+// 	}
+
+// 	// 3. Iniciamos o processo
+// 	if err := c.Cmd.Start(); err != nil {
+// 		fmt.Printf("Erro ao iniciar FFmpeg para câmera %d: %v\n", c.ID, err)
+// 		return
+// 	}
+
+// 	fmt.Printf("Captura iniciada: Câmera %d\n", c.ID)
+
+// 	// 4. Rodamos a leitura em uma Goroutine (em segundo plano)
+// 	go func() {
+// 		buf := make([]byte, 1024*64) // Buffer temporário de leitura de 64KB
+// 		for {
+// 			n, err := stdout.Read(buf)
+// 			if err != nil {
+// 				fmt.Printf("FFmpeg parado para câmera %d\n", c.ID)
+// 				return
+// 			}
+
+// 			// Criamos uma cópia do pedaço lido
+// 			frame := make([]byte, n)
+// 			copy(frame, buf[:n])
+
+// 			// JOGAMOS NO NOSSO RING BUFFER!
+// 			c.Buffer.Push(frame)
+
+// 			// Se estiver gravando, também jogamos no buffer de gravação
+// 			if c.IsRecording {
+// 				c.mu.Lock()
+// 				c.RecordingBuffer = append(c.RecordingBuffer, frame)
+// 				c.mu.Unlock()
+// 			}
+// 		}
+// 	}()
+// }
 
 func (c *Camera) StartCapture() {
 	go func() {
