@@ -97,12 +97,12 @@ func (c *Camera) processStream(stdout io.ReadCloser) error {
 		c.Buffer.Push(frame)
 
 		if c.isStopping {
-			fmt.Printf("[Câmera %d] Gravando frame de %d bytes\n", c.ID, n)
+			// fmt.Printf("[Câmera %d] Gravando frame de %d bytes\n", c.ID, n)
 			c.mu.Lock()
 			c.RecordingBuffer = append(c.RecordingBuffer, frame)
 			c.mu.Unlock()
 		} else {
-			fmt.Printf("[Câmera %d] Não está gravando frame de %d bytes\n", c.ID, n)
+			// fmt.Printf("[Câmera %d] Não está gravando frame de %d bytes\n", c.ID, n)
 		}
 		// if c.IsRecording {
 		// 	c.mu.Lock()
@@ -171,6 +171,15 @@ func (m *StreamManager) StopGravação(id int) (*Camera, bool) {
 	cam.isStopping = false
 
 	return cam, exists
+}
+
+
+func (c *Camera) RecordingBufferSize() int {
+    total := 0
+    for _, b := range c.RecordingBuffer {
+        total += len(b)
+    }
+    return total
 }
 
 // func (c *Camera) Stop() {
