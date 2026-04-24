@@ -1,58 +1,28 @@
 package handlers
 
 import (
+	"camsystem/db"
+	"camsystem/schemas"
 	"encoding/json"
 	"fmt"
-	bolt "go.etcd.io/bbolt"
-	"github.com/gin-gonic/gin"
 	"net/http"
-	"camsystem/db"
 	"strconv"
 
+	"github.com/gin-gonic/gin"
+	bolt "go.etcd.io/bbolt"
 )
 
 type CameraRequest struct {
-	ID int `json:"id"`
+	ID  int    `json:"id"`
 	URL string `json:"url"`
 }
-
-// func CreateEstacionamentos(c *gin.Context) {
-// 	db := config.GetDB()
-
-// 	var input schemas.Estacionamentos
-
-// 	if err := c.ShouldBindJSON(&input); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"error":   "JSON inválido",
-// 			"details": err.Error(),
-// 		})
-// 		return
-// 	}
-// 	if input.Nome == "" {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"error": "O campo 'nome' é obrigatório",
-// 		})
-// 		return
-// 	}
-
-// 	if err := db.Create(&input).Error; err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{
-// 			"error":   "Erro ao criar estacionamento",
-// 			"details": err.Error(),
-// 		})
-// 		return
-// 	}
-// 	c.JSON(http.StatusCreated, gin.H{
-// 		"data": input,
-// 	})
-// }
 
 func SaveCamera(c *gin.Context) {
 	var cam CameraRequest
 
 	if err := c.ShouldBindJSON(&cam); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "JSON inválido",
+			"error":   "JSON inválido",
 			"details": err.Error(),
 		})
 		return
@@ -84,6 +54,87 @@ func GetCameras(c *gin.Context) {
 	})
 }
 
+func GetCamera(manager *schemas.StreamManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			ID int `json:"id"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "JSON inválido",
+			})
+			return
+		}
+
+		cam, exists := manager.GetCamera(req.ID)
+
+		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "câmera não encontrada",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, cam.URL)
+	}
+}
+
+func StartCamera(manager *schemas.StreamManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			ID int `json:"id"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "JSON inválido",
+			})
+			return
+		}
+
+		cam, exists := manager.StartGravação(req.ID)
+
+		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "câmera não encontrada",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, cam.URL)
+	}
+}
+
+func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			ID int `json:"id"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "JSON inválido",
+			})
+			return
+		}
+
+		cam, exists := manager.StopGravação(req.ID)
+
+		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "câmera não encontrada",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, cam.RecordingBuffer)
+		cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
+	}
+}
 
 func SaveCameraToDB(cam CameraRequest) error {
 	return db.DB.Update(func(tx *bolt.Tx) error {
@@ -100,8 +151,8 @@ func SaveCameraToDB(cam CameraRequest) error {
 	})
 }
 
-func GetAllCameras() (map[int]string, error) {
-	cameras := make(map[int]string)
+func GetAllCameras() (map[int]CameraRequest, error) {
+	cameras := make(map[int]CameraRequest)
 
 	err := db.DB.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("cameras"))
@@ -112,7 +163,11 @@ func GetAllCameras() (map[int]string, error) {
 				return err
 			}
 
-			cameras[id] = string(v)
+			var cam CameraRequest
+			if err := json.Unmarshal(v, &cam); err != nil {
+				return err
+			}
+			cameras[id] = cam
 			return nil
 		})
 	})

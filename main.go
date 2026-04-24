@@ -1,16 +1,20 @@
 package main
 
 import (
-
-	"camsystem/router"
 	"camsystem/db"
+	"camsystem/router"
+	"camsystem/schemas"
+	"camsystem/service"
 )
-
 
 func main() {
 
 	db.InitDB()
 
-	router.Initialize()
+	manager := schemas.NewStreamManager()
+
+	go service.Capturarador(manager)
+
+	router.Initialize(manager)
 
 }
