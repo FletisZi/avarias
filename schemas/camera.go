@@ -26,10 +26,42 @@ func NewCamera(id int, url string) *Camera {
 	return &Camera{
 		ID:              id,
 		URL:             url,
-		Buffer:          tools.NewRingBuffer(10, 1),
+		Buffer:          tools.NewRingBuffer(10, 15),
 		Recording:       false,
 		RecordingBuffer: make([][]byte, 0),
 	}
+}
+
+func (c *Camera) SaveRecording(filename string) error {
+	c.Mu.RLock()
+	defer c.Mu.RUnlock()
+
+	cmd := exec.Command("ffmpeg",
+		"-f", "mpegts",
+		"-i", "pipe:0",
+		"-c", "copy",
+		"-movflags", "+faststart",
+		filename,
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// escreve tudo no stdin do ffmpeg
+	go func() {
+		defer stdin.Close()
+		for _, frame := range c.RecordingBuffer {
+			stdin.Write(frame)
+		}
+	}()
+
+	return cmd.Wait()
 }
 
 func (c *Camera) setRecording(status bool) {
@@ -162,6 +194,10 @@ func (m *StreamManager) StartGravação(id int) (*Camera, bool) {
 	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
 
 	cam, exists := m.Cameras[id]
+
+	data := cam.Buffer.GetAll()
+	cam.RecordingBuffer = append(cam.RecordingBuffer, data...)
+	fmt.Printf("[Manager] Câmera %d: Copiados %d frames do buffer para o buffer de gravação.\n", id, len(cam.RecordingBuffer))
 
 	cam.isStopping = true
 	return cam, exists

@@ -135,8 +135,15 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 		}
 		PrintMemUsage()
 
-		c.JSON(http.StatusOK, cam.RecordingBuffer)
+		c.JSON(http.StatusOK, gin.H{
+	"status": "salvando gravação",
+})
 		// cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
+		err := cam.SaveRecording("./videos/saida.mp4")
+		if err != nil {
+			fmt.Printf("[Handler] Erro ao salvar gravação da câmera %d: %v\n", req.ID, err)
+		}
+
 		cam.Mu.Lock()
 		cam.RecordingBuffer = nil
 		cam.Mu.Unlock()
