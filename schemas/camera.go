@@ -19,7 +19,7 @@ type Camera struct {
 	isStopping      bool
 	LastData        time.Time
 	RecordingBuffer [][]byte
-	mu              sync.RWMutex
+	Mu              sync.RWMutex
 }
 
 func NewCamera(id int, url string) *Camera {
@@ -33,8 +33,8 @@ func NewCamera(id int, url string) *Camera {
 }
 
 func (c *Camera) setRecording(status bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.Mu.Lock()
+	defer c.Mu.Unlock()
 	c.IsRecording = status
 }
 
@@ -86,6 +86,8 @@ func (c *Camera) StartCapture() {
 
 func (c *Camera) processStream(stdout io.ReadCloser) error {
 	buf := make([]byte, 1024*64)
+	const maxFrames = 30000000
+
 	for {
 		n, err := stdout.Read(buf)
 		if err != nil {
@@ -98,16 +100,20 @@ func (c *Camera) processStream(stdout io.ReadCloser) error {
 
 		if c.isStopping {
 			// fmt.Printf("[Câmera %d] Gravando frame de %d bytes\n", c.ID, n)
-			c.mu.Lock()
+			c.Mu.Lock()
+			// c.RecordingBuffer = append(c.RecordingBuffer, frame)
+			if len(c.RecordingBuffer) >= maxFrames {
+				c.RecordingBuffer = c.RecordingBuffer[1:]
+			}
 			c.RecordingBuffer = append(c.RecordingBuffer, frame)
-			c.mu.Unlock()
+			c.Mu.Unlock()
 		} else {
 			// fmt.Printf("[Câmera %d] Não está gravando frame de %d bytes\n", c.ID, n)
 		}
 		// if c.IsRecording {
-		// 	c.mu.Lock()
+		// 	c.Mu.Lock()
 		// 	c.RecordingBuffer = append(c.RecordingBuffer, frame)
-		// 	c.mu.Unlock()
+		// 	c.Mu.Unlock()
 		// }
 	}
 }
@@ -115,7 +121,7 @@ func (c *Camera) processStream(stdout io.ReadCloser) error {
 type StreamManager struct {
 	// O map usa o ID da câmera como chave para busca rápida
 	Cameras map[int]*Camera
-	mu      sync.RWMutex
+	Mu      sync.RWMutex
 }
 
 func NewStreamManager() *StreamManager {
@@ -126,8 +132,8 @@ func NewStreamManager() *StreamManager {
 
 // AddCamera adiciona uma nova câmera ao sistema e já inicia a captura
 func (m *StreamManager) AddCamera(id int, url string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 
 	// Cria a instância usando o construtor que já fizemos
 	newCam := NewCamera(id, url)
@@ -140,8 +146,8 @@ func (m *StreamManager) AddCamera(id int, url string) {
 }
 
 func (m *StreamManager) GetCamera(id int) (*Camera, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
 
 	cam, exists := m.Cameras[id]
@@ -151,8 +157,8 @@ func (m *StreamManager) GetCamera(id int) (*Camera, bool) {
 }
 
 func (m *StreamManager) StartGravação(id int) (*Camera, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
 
 	cam, exists := m.Cameras[id]
@@ -162,8 +168,8 @@ func (m *StreamManager) StartGravação(id int) (*Camera, bool) {
 }
 
 func (m *StreamManager) StopGravação(id int) (*Camera, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
 
 	cam, exists := m.Cameras[id]
@@ -173,19 +179,27 @@ func (m *StreamManager) StopGravação(id int) (*Camera, bool) {
 	return cam, exists
 }
 
-
 func (c *Camera) RecordingBufferSize() int {
-    total := 0
-    for _, b := range c.RecordingBuffer {
-        total += len(b)
-    }
-    return total
+	total := 0
+	for _, b := range c.RecordingBuffer {
+		total += len(b)
+	}
+	return total
+}
+
+func (c *Camera) BufferSize() int {
+	total := 0
+	for _, b := range c.Buffer.GetAll() {
+
+		total += len(b)
+	}
+	return total
 }
 
 // func (c *Camera) Stop() {
-// 	c.mu.Lock()
+// 	c.Mu.Lock()
 // 	c.isStopping = true // Avisa que a parada é intencional
-// 	c.mu.Unlock()
+// 	c.Mu.Unlock()
 
 // 	if c.Cmd != nil && c.Cmd.Process != nil {
 // 		fmt.Printf("[Câmera %d] Encerrando processo FFmpeg...\n", c.ID)
@@ -200,8 +214,8 @@ func (c *Camera) RecordingBufferSize() int {
 
 // RemoveCamera para a captura e remove do mapa
 // func (m *StreamManager) RemoveCamera(id int) {
-// 	m.mu.Lock()
-// 	defer m.mu.Unlock()
+// 	m.Mu.Lock()
+// 	defer m.Mu.Unlock()
 
 // 	if cam, ok := m.Cameras[id]; ok {
 // 		// Precisaremos criar um método Stop na Camera depois

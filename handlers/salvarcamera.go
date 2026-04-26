@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"runtime"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	bolt "go.etcd.io/bbolt"
@@ -125,6 +125,7 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 		cam, exists := manager.StopGravação(req.ID)
 
 		fmt.Printf("[Handler] Tamanho do buffer de gravação da câmera %d: %d bytes\n", req.ID, cam.RecordingBufferSize())
+		fmt.Printf("[Handler] Tamanho do buffer de leitura da câmera %d: %d bytes\n", req.ID, cam.BufferSize())
 		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
 		if !exists {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -135,7 +136,10 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 		PrintMemUsage()
 
 		c.JSON(http.StatusOK, cam.RecordingBuffer)
-		cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
+		// cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
+		cam.Mu.Lock()
+		cam.RecordingBuffer = nil
+		cam.Mu.Unlock()
 	}
 }
 
@@ -178,15 +182,12 @@ func GetAllCameras() (map[int]CameraRequest, error) {
 	return cameras, err
 }
 
-
-
-
 func PrintMemUsage() {
-    var m runtime.MemStats
-    runtime.ReadMemStats(&m)
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
 
-    fmt.Printf("Alloc = %v MB\n", m.Alloc/1024/1024)
-    fmt.Printf("TotalAlloc = %v MB\n", m.TotalAlloc/1024/1024)
-    fmt.Printf("Sys = %v MB\n", m.Sys/1024/1024)
-    fmt.Printf("NumGC = %v\n", m.NumGC)
+	fmt.Printf("Alloc = %v MB\n", m.Alloc/1024/1024)
+	fmt.Printf("TotalAlloc = %v MB\n", m.TotalAlloc/1024/1024)
+	fmt.Printf("Sys = %v MB\n", m.Sys/1024/1024)
+	fmt.Printf("NumGC = %v\n", m.NumGC)
 }
