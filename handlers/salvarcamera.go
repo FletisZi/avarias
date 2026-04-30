@@ -98,7 +98,8 @@ func StartCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 
 		cam, exists := manager.StartGravação(req.ID)
 
-		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
+		// fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
+
 		if !exists {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "câmera não encontrada",
@@ -125,8 +126,8 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 
 		cam, exists := manager.StopGravação(req.ID)
 
-		fmt.Printf("[Handler] Tamanho do buffer de gravação da câmera %d: %d bytes\n", req.ID, cam.RecordingBufferSize())
-		fmt.Printf("[Handler] Tamanho do buffer de leitura da câmera %d: %d bytes\n", req.ID, cam.BufferSize())
+		// fmt.Printf("[Handler] Tamanho do buffer de gravação da câmera %d: %d bytes\n", req.ID, cam.RecordingBufferSize())
+		// fmt.Printf("[Handler] Tamanho do buffer de leitura da câmera %d: %d bytes\n", req.ID, cam.BufferSize())
 		fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
 		if !exists {
 			c.JSON(http.StatusNotFound, gin.H{

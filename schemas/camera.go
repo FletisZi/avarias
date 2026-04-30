@@ -32,38 +32,6 @@ func NewCamera(id int, url string) *Camera {
 	}
 }
 
-func (c *Camera) SaveRecording(filename string) error {
-	c.Mu.RLock()
-	defer c.Mu.RUnlock()
-
-	cmd := exec.Command("ffmpeg",
-		"-f", "mpegts",
-		"-i", "pipe:0",
-		"-c", "copy",
-		"-movflags", "+faststart",
-		filename,
-	)
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	// escreve tudo no stdin do ffmpeg
-	go func() {
-		defer stdin.Close()
-		for _, frame := range c.RecordingBuffer {
-			stdin.Write(frame)
-		}
-	}()
-
-	return cmd.Wait()
-}
-
 func (c *Camera) setRecording(status bool) {
 	c.Mu.Lock()
 	defer c.Mu.Unlock()
@@ -150,87 +118,53 @@ func (c *Camera) processStream(stdout io.ReadCloser) error {
 	}
 }
 
-type StreamManager struct {
-	// O map usa o ID da câmera como chave para busca rápida
-	Cameras map[int]*Camera
-	Mu      sync.RWMutex
-}
+func (c *Camera) SaveRecording(filename string) error {
+	c.Mu.RLock()
+	defer c.Mu.RUnlock()
 
-func NewStreamManager() *StreamManager {
-	return &StreamManager{
-		Cameras: make(map[int]*Camera),
+	cmd := exec.Command("ffmpeg",
+		"-f", "mpegts",
+		"-i", "pipe:0",
+		"-c", "copy",
+		"-movflags", "+faststart",
+		filename,
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
 	}
-}
 
-// AddCamera adiciona uma nova câmera ao sistema e já inicia a captura
-func (m *StreamManager) AddCamera(id int, url string) {
-	m.Mu.Lock()
-	defer m.Mu.Unlock()
-
-	// Cria a instância usando o construtor que já fizemos
-	newCam := NewCamera(id, url)
-	m.Cameras[id] = newCam
-
-	// Inicia o processo de auto-healing que criamos antes
-	go newCam.StartCapture()
-
-	fmt.Printf("[Manager] Câmera %d adicionada e iniciando...\n", id)
-}
-
-func (m *StreamManager) GetCamera(id int) (*Camera, bool) {
-	m.Mu.RLock()
-	defer m.Mu.RUnlock()
-	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
-
-	cam, exists := m.Cameras[id]
-
-	cam.isStopping = true
-	return cam, exists
-}
-
-func (m *StreamManager) StartGravação(id int) (*Camera, bool) {
-	m.Mu.RLock()
-	defer m.Mu.RUnlock()
-	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
-
-	cam, exists := m.Cameras[id]
-
-	data := cam.Buffer.GetAll()
-	cam.RecordingBuffer = append(cam.RecordingBuffer, data...)
-	fmt.Printf("[Manager] Câmera %d: Copiados %d frames do buffer para o buffer de gravação.\n", id, len(cam.RecordingBuffer))
-
-	cam.isStopping = true
-	return cam, exists
-}
-
-func (m *StreamManager) StopGravação(id int) (*Camera, bool) {
-	m.Mu.RLock()
-	defer m.Mu.RUnlock()
-	fmt.Printf("[Manager] Buscando câmera %d...\n", id)
-
-	cam, exists := m.Cameras[id]
-
-	cam.isStopping = false
-
-	return cam, exists
-}
-
-func (c *Camera) RecordingBufferSize() int {
-	total := 0
-	for _, b := range c.RecordingBuffer {
-		total += len(b)
+	if err := cmd.Start(); err != nil {
+		return err
 	}
-	return total
+
+	go func() {
+		defer stdin.Close()
+		for _, frame := range c.RecordingBuffer {
+			stdin.Write(frame)
+		}
+	}()
+
+	return cmd.Wait()
 }
 
-func (c *Camera) BufferSize() int {
-	total := 0
-	for _, b := range c.Buffer.GetAll() {
+// func (c *Camera) RecordingBufferSize() int {
+// 	total := 0
+// 	for _, b := range c.RecordingBuffer {
+// 		total += len(b)
+// 	}
+// 	return total
+// }
 
-		total += len(b)
-	}
-	return total
-}
+// func (c *Camera) BufferSize() int {
+// 	total := 0
+// 	for _, b := range c.Buffer.GetAll() {
+
+// 		total += len(b)
+// 	}
+// 	return total
+// }
 
 // func (c *Camera) Stop() {
 // 	c.Mu.Lock()
