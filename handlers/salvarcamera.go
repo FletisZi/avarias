@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	bolt "go.etcd.io/bbolt"
@@ -96,6 +95,9 @@ func StartCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 			return
 		}
 
+		placa := manager.BuscarPlaca("camera"+strconv.Itoa(req.ID), req.ID)
+		fmt.Printf("[Handler] Placa detectada para câmera %d: %s\n", req.ID, placa)
+
 		cam, exists := manager.StartGravação(req.ID)
 
 		// fmt.Printf("[Handler] Requisição para câmera %d. Existe? %v\n", req.ID, cam.URL)
@@ -141,7 +143,8 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 			"status": "salvando gravação",
 		})
 		// cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
-		err := cam.SaveRecording(`./videos/saida` + time.Now().Format("2006-01-02_15-04-05") + `.mp4`)
+		// err := cam.SaveRecording(`./videos/saida` + time.Now().Format("2006-01-02_15-04-05") + `.mp4`)
+		err := cam.SaveRecording(cam.Placa)
 		if err != nil {
 			fmt.Printf("[Handler] Erro ao salvar gravação da câmera %d: %v\n", req.ID, err)
 		}

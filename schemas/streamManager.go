@@ -2,6 +2,8 @@ package schemas
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"sync"
 )
 
@@ -56,6 +58,27 @@ func (m *StreamManager) StartGravação(id int) (*Camera, bool) {
 
 	cam.isStopping = true
 	return cam, exists
+}
+
+func (m *StreamManager) BuscarPlaca(cameraID string, id int) string {
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
+	fmt.Printf("[Manager] Buscando câmera %s...\n", cameraID)
+	cam := m.Cameras[id]
+	resp, err := http.Post("http://localhost:9000/detect?cancela=cancela1", "", nil)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	cam.Placa = string(body)
+
+	return cam.Placa
 }
 
 func (m *StreamManager) StopGravação(id int) (*Camera, bool) {

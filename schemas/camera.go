@@ -2,6 +2,7 @@ package schemas
 
 import (
 	"camsystem/tools"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
@@ -19,6 +20,7 @@ type Camera struct {
 	isStopping      bool
 	LastData        time.Time
 	RecordingBuffer [][]byte
+	Placa           string
 	Mu              sync.RWMutex
 }
 
@@ -118,9 +120,30 @@ func (c *Camera) processStream(stdout io.ReadCloser) error {
 	}
 }
 
-func (c *Camera) SaveRecording(filename string) error {
+func (c *Camera) SaveRecording(placa string) error {
 	c.Mu.RLock()
 	defer c.Mu.RUnlock()
+
+	fmt.Println("Placa é", placa)
+	type Payload struct {
+		Placa string `json:"placa"`
+	}
+
+	var data Payload
+
+	err := json.Unmarshal([]byte(placa), &data)
+	if err != nil {
+		fmt.Println("Erro ao converter:", err)
+		return err
+	}
+
+	filename, err := tools.GenerateVideoFilePath(data.Placa)
+	if err != nil {
+		fmt.Println("Erro ao gerar caminho do vídeo:", err)
+		return err
+	}
+
+	fmt.Println("Salvando em:", filename)
 
 	cmd := exec.Command("ffmpeg",
 		"-f", "mpegts",
