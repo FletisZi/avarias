@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	bolt "go.etcd.io/bbolt"
@@ -109,6 +110,11 @@ func StartCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 			return
 		}
 
+		error := cam.SaveBufferToFile(cam.Buffer.GetAll(), `./videos/saida_`+`Buffer`+time.Now().Format("2006-01-02_15-04-05")+".mp4")
+		if error != nil {
+			fmt.Printf("[Handler] Erro ao salvar gravação da câmera %d: %v\n", req.ID, error)
+		}
+
 		c.JSON(http.StatusOK, cam.URL)
 	}
 }
@@ -144,6 +150,7 @@ func StopCamera(manager *schemas.StreamManager) gin.HandlerFunc {
 		})
 		// cam.RecordingBuffer = make([][]byte, 0) // Limpa o buffer de gravação
 		// err := cam.SaveRecording(`./videos/saida` + time.Now().Format("2006-01-02_15-04-05") + `.mp4`)
+
 		err := cam.SaveRecording(cam.Placa)
 		if err != nil {
 			fmt.Printf("[Handler] Erro ao salvar gravação da câmera %d: %v\n", req.ID, err)

@@ -1,10 +1,10 @@
 package schemas
 
 import (
+	"camsystem/infra"
 	"camsystem/tools"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os/exec"
 	"sync"
 	"time"
@@ -28,7 +28,7 @@ func NewCamera(id int, url string) *Camera {
 	return &Camera{
 		ID:              id,
 		URL:             url,
-		Buffer:          tools.NewRingBuffer(10, 15),
+		Buffer:          tools.NewRingBuffer(12, 20),
 		Recording:       false,
 		RecordingBuffer: make([][]byte, 0),
 	}
@@ -41,83 +41,194 @@ func (c *Camera) setRecording(status bool) {
 }
 
 func (c *Camera) StartCapture() {
+
+	go c.MonitorStream()
+
 	go func() {
 		for {
+
 			fmt.Printf("[Câmera %d] Tentando conectar em: %s\n", c.ID, c.URL)
 
-			// 1. Configura o comando
-			c.Cmd = exec.Command("ffmpeg",
-				"-rtsp_transport", "tcp",
-				"-i", c.URL,
-				"-c", "copy", "-f", "mpegts", "pipe:1")
+			cmd, stdout, err := infra.StartFFmpeg(c.URL)
 
-			stdout, _ := c.Cmd.StdoutPipe()
-
-			// 2. Inicia o processo
-			if err := c.Cmd.Start(); err != nil {
-				c.setRecording(false)
-				fmt.Printf("[Câmera %d] Erro ao iniciar: %v. Tentando novamente em 5s...\n", c.ID, err)
+			if err != nil {
+				fmt.Printf("[Câmera %d] erro ao iniciar ffmpeg: %v\n", c.ID, err)
 				time.Sleep(5 * time.Second)
 				continue
 			}
-			c.setRecording(true)
-			fmt.Printf("[Câmera %d] ✅ Conectado e Gravando!\n", c.ID)
 
-			// 3. Lê o stream em uma goroutine separada
-			// Passamos o stdout para uma função que fará o Push no RingBuffer
-			done := make(chan error, 1)
-			go func() {
-				done <- c.processStream(stdout)
-			}()
+			err = c.ProcessStream(stdout)
 
-			// 4. O "Vigia": Ele fica parado aqui até o FFmpeg morrer ou o stream fechar
-			err := c.Cmd.Wait()
+			fmt.Printf("[Câmera %d] stream encerrado: %v\n", c.ID, err)
 
-			if err != nil {
-				fmt.Printf("[Câmera %d] FFmpeg caiu! Motivo: %v\n", c.ID, err)
-			} else {
-				fmt.Printf("[Câmera %d] FFmpeg encerrou normalmente.\n", c.ID)
-			}
+			c.Mu.Lock()
+			c.IsRecording = false
+			c.Mu.Unlock()
 
-			// 5. Delay de segurança antes de reiniciar (para não fritar a CPU se a URL estiver errada)
-			fmt.Printf("[Câmera %d] Reiniciando captura em 5 segundos...\n", c.ID)
+			cmd.Wait()
+
 			time.Sleep(5 * time.Second)
 		}
 	}()
 }
 
-func (c *Camera) processStream(stdout io.ReadCloser) error {
-	buf := make([]byte, 1024*64)
-	const maxFrames = 30000000
+// func (c *Camera) StartCapture() {
+// 	go func() {
+// 		for {
+// 			fmt.Printf("[Câmera %d] Tentando conectar em: %s\n", c.ID, c.URL)
 
-	for {
-		n, err := stdout.Read(buf)
-		if err != nil {
-			return err // Se houver erro na leitura, sai do loop e avisa o "Vigia"
+// 			cmd, stdout, _ := infra.StartFFmpeg(c.URL)
+
+// 			done := make(chan error, 1)
+
+// 			go func() {
+// 				done <- c.ProcessStream(stdout)
+// 			}()
+
+// 			// c.setRecording(true)
+// 			fmt.Printf("[Câmera %d] O que ta em ISRecording: %v\n", c.ID, c.IsRecording)
+// 			fmt.Printf("[Câmera %d] ✅ Conectado e Gravando!\n", c.ID)
+
+// 			erro := cmd.Wait()
+
+// 			if erro != nil {
+// 				fmt.Printf("[Câmera %d] FFmpeg caiu! Motivo: %v\n", c.ID, erro)
+// 			} else {
+// 				fmt.Printf("[Câmera %d] FFmpeg encerrou normalmente.\n", c.ID)
+// 			}
+
+// 			// 5. Delay de segurança antes de reiniciar (para não fritar a CPU se a URL estiver errada)
+// 			fmt.Printf("[Câmera %d] Reiniciando captura em 5 segundos...\n", c.ID)
+// 			time.Sleep(5 * time.Second)
+// 		}
+// 	}()
+// }
+
+func (c *Camera) MonitorStream() {
+	ticker := time.NewTicker(5 * time.Second)
+
+	for range ticker.C {
+
+		c.Mu.Lock()
+
+		// Se passou mais de 10 segundos sem dados
+		if time.Since(c.LastData) > 10*time.Second {
+			c.IsRecording = false
+
+			fmt.Printf("[Câmera %d] ⚠️ Sem dados do stream!\n", c.ID)
 		}
 
-		frame := make([]byte, n)
-		copy(frame, buf[:n])
-		c.Buffer.Push(frame)
-
-		if c.isStopping {
-			// fmt.Printf("[Câmera %d] Gravando frame de %d bytes\n", c.ID, n)
-			c.Mu.Lock()
-			// c.RecordingBuffer = append(c.RecordingBuffer, frame)
-			if len(c.RecordingBuffer) >= maxFrames {
-				c.RecordingBuffer = c.RecordingBuffer[1:]
-			}
-			c.RecordingBuffer = append(c.RecordingBuffer, frame)
-			c.Mu.Unlock()
-		} else {
-			// fmt.Printf("[Câmera %d] Não está gravando frame de %d bytes\n", c.ID, n)
-		}
-		// if c.IsRecording {
-		// 	c.Mu.Lock()
-		// 	c.RecordingBuffer = append(c.RecordingBuffer, frame)
-		// 	c.Mu.Unlock()
-		// }
+		c.Mu.Unlock()
 	}
+}
+
+// func (c *Camera) StartCapture() {
+// 	go func() {
+// 		for {
+// 			fmt.Printf("[Câmera %d] Tentando conectar em: %s\n", c.ID, c.URL)
+
+// 			// 1. Configura o comando
+// 			// c.Cmd = exec.Command("ffmpeg",
+// 			// 	"-rtsp_transport", "tcp",
+// 			// 	"-i", c.URL,
+// 			// 	"-c", "copy", "-f", "mpegts", "pipe:1")
+
+// 			// c.Cmd = infra.NewFFmpegCommand(c.URL)
+
+// 			cmd, stdout, _ := infra.StartFFmpeg(c.URL)
+
+// 			// stdout, _ := c.Cmd.StdoutPipe()
+
+// 			// 2. Inicia o processo
+// 			// if err := cmd.Start(); err != nil {
+// 			// 	c.setRecording(false)
+// 			// 	fmt.Printf("[Câmera %d] Erro ao iniciar: %v. Tentando novamente em 5s...\n", c.ID, err)
+// 			// 	time.Sleep(5 * time.Second)
+// 			// 	continue
+// 			// }
+// 			c.setRecording(true)
+// 			fmt.Printf("[Câmera %d] ✅ Conectado e Gravando!\n", c.ID)
+
+// 			// 3. Lê o stream em uma goroutine separada
+// 			// Passamos o stdout para uma função que fará o Push no RingBuffer
+// 			done := make(chan error, 1)
+// 			go func() {
+// 				done <- c.ProcessStream(stdout)
+// 			}()
+
+// 			// 4. O "Vigia": Ele fica parado aqui até o FFmpeg morrer ou o stream fechar
+// 			erro := cmd.Wait()
+
+// 			if erro != nil {
+// 				fmt.Printf("[Câmera %d] FFmpeg caiu! Motivo: %v\n", c.ID, erro)
+// 			} else {
+// 				fmt.Printf("[Câmera %d] FFmpeg encerrou normalmente.\n", c.ID)
+// 			}
+
+// 			// 5. Delay de segurança antes de reiniciar (para não fritar a CPU se a URL estiver errada)
+// 			fmt.Printf("[Câmera %d] Reiniciando captura em 5 segundos...\n", c.ID)
+// 			time.Sleep(5 * time.Second)
+// 		}
+// 	}()
+// }
+
+// func (c *Camera) processStream(stdout io.ReadCloser) error {
+// 	buf := make([]byte, 1024*64)
+// 	const maxFrames = 30000000
+
+// 	for {
+// 		n, err := stdout.Read(buf)
+// 		if err != nil {
+// 			return err // Se houver erro na leitura, sai do loop e avisa o "Vigia"
+// 		}
+
+// 		frame := make([]byte, n)
+// 		copy(frame, buf[:n])
+// 		c.Buffer.Push(frame)
+
+// 		if c.isStopping {
+// 			// fmt.Printf("[Câmera %d] Gravando frame de %d bytes\n", c.ID, n)
+// 			c.Mu.Lock()
+// 			// c.RecordingBuffer = append(c.RecordingBuffer, frame)
+// 			if len(c.RecordingBuffer) >= maxFrames {
+// 				c.RecordingBuffer = c.RecordingBuffer[1:]
+// 			}
+// 			c.RecordingBuffer = append(c.RecordingBuffer, frame)
+// 			c.Mu.Unlock()
+// 		} else {
+// 			// fmt.Printf("[Câmera %d] Não está gravando frame de %d bytes\n", c.ID, n)
+// 		}
+// 		// if c.IsRecording {
+// 		// 	c.Mu.Lock()
+// 		// 	c.RecordingBuffer = append(c.RecordingBuffer, frame)
+// 		// 	c.Mu.Unlock()
+// 		// }
+// 	}
+// }
+
+func (c *Camera) SaveBufferToFile(buffer [][]byte, filename string) error {
+	cmd := exec.Command("ffmpeg",
+		"-f", "mpegts",
+		"-i", "pipe:0",
+		"-c", "copy",
+		"-movflags", "+faststart",
+		filename,
+	)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	go func() {
+		defer stdin.Close()
+		for _, frame := range buffer {
+			stdin.Write(frame)
+		}
+	}()
+	return cmd.Wait()
 }
 
 func (c *Camera) SaveRecording(placa string) error {
